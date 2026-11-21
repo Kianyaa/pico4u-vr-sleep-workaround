@@ -9,9 +9,10 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ onOpenSettings }: AppHeaderProps) {
-  const { t } = useAppContext()
+  const { t, isRunning } = useAppContext()
   const versionText = `v${packageJson.version}${import.meta.env.DEV ? '-dev' : ''}`
-  const windowTitle = `${t('title')} ${versionText}`
+  // The taskbar shows the title, so the running state is visible with the window minimised.
+  const windowTitle = `${isRunning ? `${t('title_running_prefix')} · ` : ''}${t('title')} ${versionText}`
 
   useEffect(() => {
     document.title = windowTitle

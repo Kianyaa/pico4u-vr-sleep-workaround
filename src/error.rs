@@ -63,6 +63,12 @@ impl From<AppError> for String {
 
 impl From<String> for AppError {
     fn from(raw: String) -> Self {
+        // adb_client errors name the transport; a serial with ':' is an ip:port (wireless) target.
+        let wireless = raw
+            .split("host:transport:")
+            .nth(1)
+            .and_then(|rest| rest.split('\'').next())
+            .is_some_and(|serial| serial.contains(':'));
         let code = if raw.contains("Failed to start ADB server")
             || raw.contains("ADB server unavailable")
         {
@@ -70,9 +76,17 @@ impl From<String> for AppError {
         } else if raw.contains("timed out") || raw == "connection_timeout" {
             ErrorCode::Timeout
         } else if raw.contains("unauthorized") {
-            ErrorCode::UsbUnauthorized
+            if wireless {
+                ErrorCode::WirelessUnauthorized
+            } else {
+                ErrorCode::UsbUnauthorized
+            }
         } else if raw.contains("offline") {
-            ErrorCode::UsbOffline
+            if wireless {
+                ErrorCode::WirelessUnreachable
+            } else {
+                ErrorCode::UsbOffline
+            }
         } else if raw == "already_running" {
             ErrorCode::AlreadyRunning
         } else if raw == "invalid_ip" {
@@ -187,6 +201,22 @@ mod tests {
 
         let err = AppError::from("Failed to start ADB server");
         assert_eq!(err.code, ErrorCode::AdbUnavailable);
+    }
+
+    #[test]
+    fn wireless_transport_errors_are_not_labelled_usb() {
+        let err = AppError::from(
+            "ADB transport selection 'host:transport:192.168.1.4:5555' for device command 'shell:x' rejected: device offline",
+        );
+        assert_eq!(err.code, ErrorCode::WirelessUnreachable);
+        let err = AppError::from(
+            "ADB transport selection 'host:transport:192.168.1.4:5555' for device command 'shell:x' rejected: device unauthorized",
+        );
+        assert_eq!(err.code, ErrorCode::WirelessUnauthorized);
+        let err = AppError::from(
+            "ADB transport selection 'host:transport:PA8250' for device command 'shell:x' rejected: device offline",
+        );
+        assert_eq!(err.code, ErrorCode::UsbOffline);
     }
 
     #[test]

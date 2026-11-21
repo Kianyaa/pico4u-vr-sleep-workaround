@@ -268,6 +268,9 @@ const resources = {
       status_waiting_usb: 'Please connect your headset via USB',
       force_proceed: 'Proceed Anyway',
       cancel: 'Cancel',
+      close: 'Close',
+      no_logs: 'No logs yet.',
+      title_running_prefix: '● Running',
       dim_setting_label: 'Auto-dim screen after (hours):',
       dim_setting_placeholder: '0 to disable',
       dim_setting_note: 'Takes effect when sleep prevention starts',
@@ -321,6 +324,17 @@ const resources = {
       operate_running_desc: 'Sending wake signal every {{interval}}s',
       operate_elapsed: 'Elapsed {{time}}',
       operate_dim_after: 'Auto-dim after {{hours}}h',
+      operate_device_lost: 'Headset disconnected. Retrying… it may sleep until it reconnects.',
+      settings_invalid_dim: 'Dim delay must be a number from 0 to 168 hours.',
+      settings_invalid_interval: 'Interval must be a whole number from 1 to 3600 seconds.',
+      settings_save_failed: 'Could not save settings ({{detail}}).',
+      settings_locked_running: 'Stop keep-awake to change this.',
+      btn_disable_wireless: 'Turn off wireless ADB',
+      disable_wireless_note:
+        'Closes the headset’s Wi-Fi debugging port. Wireless mode will need USB setup again.',
+      confirm_disable_wireless:
+        'Turn off wireless ADB on the headset? You will need a USB cable to set up wireless mode again.',
+      log_wireless_disabled: 'Wireless ADB turned off.',
       btn_change_connection: 'Change Connection',
       errors: errorsEn,
     },
@@ -401,6 +415,9 @@ const resources = {
       status_waiting_usb: 'ヘッドセットをUSBで接続してください',
       force_proceed: 'このまま続行',
       cancel: 'キャンセル',
+      close: '閉じる',
+      no_logs: 'ログはまだありません。',
+      title_running_prefix: '● 動作中',
       dim_setting_label: '自動画面暗転（時間後）:',
       dim_setting_placeholder: '0で無効',
       dim_setting_note: 'スリープ回避の開始時に適用',
@@ -454,11 +471,31 @@ const resources = {
       operate_running_desc: '{{interval}}秒ごとにスリープ回避信号を送信中',
       operate_elapsed: '経過 {{time}}',
       operate_dim_after: '{{hours}}時間後に画面を暗くする',
+      operate_device_lost:
+        'ヘッドセットとの接続が切れました。再接続を試しています…（その間はスリープする可能性があります）',
+      settings_invalid_dim: '画面を暗くするまでの時間は0〜168の数値で入力してください。',
+      settings_invalid_interval: '送信間隔は1〜3600の整数（秒）で入力してください。',
+      settings_save_failed: '設定を保存できませんでした（{{detail}}）。',
+      settings_locked_running: '変更するにはスリープ回避を停止してください。',
+      btn_disable_wireless: '無線ADBをオフにする',
+      disable_wireless_note:
+        'ヘッドセットのWi-Fiデバッグポートを閉じます。無線接続には再度USBでの準備が必要です。',
+      confirm_disable_wireless:
+        'ヘッドセットの無線ADBをオフにしますか？無線接続を再設定するにはUSBケーブルが必要です。',
+      log_wireless_disabled: '無線ADBをオフにしました。',
       btn_change_connection: '接続を変更',
       errors: errorsJa,
     },
   },
 }
+
+// Keep <html lang> in sync so screen readers and font fallback use the right language.
+i18n.on('languageChanged', () => {
+  // Unit tests import this module under Node, where there is no document.
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = i18n.resolvedLanguage ?? 'en'
+  }
+})
 
 i18n
   .use(LanguageDetector)

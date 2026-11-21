@@ -10,6 +10,11 @@ function call<T>(command: string, args: Record<string, unknown>, signal: AbortSi
     signal,
   )
 }
+// Stop must not wait behind a slow status poll. Rust's `operation` mutex already
+// orders it after any in-flight start, and status never takes that mutex.
+function callNow<T>(command: string, args: Record<string, unknown>, signal: AbortSignal) {
+  return withTimeout(invoke<T>(command, args), 30000, signal)
+}
 export const api = {
   config: (signal: AbortSignal) => call<AppConfig>('get_config', {}, signal),
   save: (config: AppConfig, signal: AbortSignal) =>
@@ -22,7 +27,8 @@ export const api = {
   running: (signal: AbortSignal) => call<boolean>('get_running', {}, signal),
   start: (mode: ConnectionMode, signal: AbortSignal) =>
     call<void>('start_keep_awake', { mode }, signal),
-  stop: (signal: AbortSignal) => call<void>('stop_keep_awake', {}, signal),
+  stop: (signal: AbortSignal) => callNow<void>('stop_keep_awake', {}, signal),
+  disableWireless: (signal: AbortSignal) => call<void>('disable_wireless_adb', {}, signal),
   debug: (enabled: boolean, signal: AbortSignal) =>
     call<void>('set_debug_mode', { enabled }, signal),
 }

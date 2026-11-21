@@ -8,7 +8,7 @@ export function useRuntime() {
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [debug, setDebug] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
   const [logs, setLogs] = useState<string[]>([])
   const addLog = useCallback((message: string) => {
     setLogs((values) =>
@@ -29,7 +29,7 @@ export function useRuntime() {
         }
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(String(e))
+        if (!controller.signal.aborted) setError(e)
       })
     const unlisten = listen<string>('debug-log', (event) => {
       if (!controller.signal.aborted) addLog(event.payload)
@@ -43,7 +43,7 @@ export function useRuntime() {
   const toggle = async (mode: ConnectionMode | null, connected: boolean, blocked: boolean) => {
     const controller = lifecycle.current
     if (!controller || lock.current || !ready || blocked || (!running && (!mode || !connected)))
-      return
+      return false
     lock.current = true
     setBusy(true)
     setError(null)
@@ -51,9 +51,10 @@ export function useRuntime() {
       if (running) await api.stop(controller.signal)
       else await api.start(mode!, controller.signal)
       if (!controller.signal.aborted) setRunning(!running)
+      return true
     } catch (e) {
       if (!controller.signal.aborted) {
-        setError(String(e))
+        setError(e)
         // Reconcile after any ambiguous timeout before enabling another action.
         try {
           const value = await api.running(controller.signal)
@@ -62,6 +63,7 @@ export function useRuntime() {
           if (!controller.signal.aborted) setReady(false)
         }
       }
+      return false
     } finally {
       if (!controller.signal.aborted) {
         lock.current = false
@@ -76,7 +78,7 @@ export function useRuntime() {
       await api.debug(enabled, controller.signal)
       if (!controller.signal.aborted) setDebug(enabled)
     } catch (e) {
-      if (!controller.signal.aborted) setError(String(e))
+      if (!controller.signal.aborted) setError(e)
     }
   }
   return { running, ready, busy, debug, error, logs, addLog, toggle, toggleDebug }

@@ -13,6 +13,7 @@ import {
   type SetupStepItem,
 } from '../lib/setupSteps'
 import type { ConnectionMode } from '../types'
+import { api } from '../lib/api'
 export type { ConnectionStatus } from '../types'
 
 export function useAppLogic() {
@@ -105,9 +106,28 @@ export function useAppLogic() {
   const toggleKeepAwake = async () => {
     const wasRunning = runtime.running
     const interval = config?.keep_awake_interval_secs ?? 3
-    await runtime.toggle(mode, connection.connected, connection.busy || settings.isSaving)
-    if (!runtime.error) {
+    // Use the returned result: runtime.error here is the stale value from before the click.
+    const ok = await runtime.toggle(
+      mode,
+      connection.connected,
+      connection.busy || settings.isSaving,
+    )
+    if (ok) {
       runtime.addLog(wasRunning ? t('log_stopped_loop') : t('log_started_loop', { interval }))
+    }
+  }
+
+  // Returns null on success, or the error to show.
+  const disableWirelessAdb = async (): Promise<AppError | null> => {
+    try {
+      await api.disableWireless(new AbortController().signal)
+      await connection.selectMode(null)
+      runtime.addLog(t('log_wireless_disabled'))
+      return null
+    } catch (e) {
+      const appErr = toAppError(e)
+      runtime.addLog(formatErrorLog(appErr, t, runtime.debug))
+      return appErr
     }
   }
 
@@ -153,6 +173,8 @@ export function useAppLogic() {
     setupWireless,
     connectManual,
     toggleKeepAwake,
+    disableWirelessAdb,
+    configLoaded: config !== null,
     updateDimDelay: (hours: number) => settings.update({ dim_delay_hours: hours }),
     updateKeepAwakeInterval: (seconds: number) =>
       settings.update({ keep_awake_interval_secs: seconds }),

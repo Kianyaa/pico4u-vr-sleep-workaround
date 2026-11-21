@@ -141,11 +141,22 @@ pub async fn setup_wireless(
         let config = load_config(&app);
 
         let usb_serial = match probe_usb(&rows) {
-            UsbProbe::Ready(mut ser) => {
-                let s = ser.remove(0);
+            UsbProbe::Ready(_) => {
                 emit_progress(&app, SetupStep::Usb, StepState::Ok, None);
                 emit_progress(&app, SetupStep::Authorized, StepState::Ok, None);
-                s
+                // Pick the verified headset, not just the first USB device (e.g. a phone).
+                emit_progress(&app, SetupStep::Pico, StepState::Running, None);
+                match connection::target_device(&app, ConnectionMode::Wired, "").await {
+                    Ok(Some(serial)) => serial,
+                    Ok(None) => {
+                        emit_progress(&app, SetupStep::Pico, StepState::Failed, None);
+                        return Err(AppError::new(ErrorCode::NotPico));
+                    }
+                    Err(e) => {
+                        emit_progress(&app, SetupStep::Pico, StepState::Failed, None);
+                        return Err(e);
+                    }
+                }
             }
             UsbProbe::Unauthorized => {
                 emit_progress(&app, SetupStep::Usb, StepState::Ok, None);
@@ -170,8 +181,8 @@ pub async fn setup_wireless(
                         .await
                         .unwrap_or(false)
                     {
-                        // Found active wireless PICO device!
-                        let ip = target.split(':').next().unwrap_or(&target).to_string();
+                        // Keep the port: endpoint() would otherwise assume 5555.
+                        let ip = target.clone();
                         emit_progress(
                             &app,
                             SetupStep::Usb,
@@ -194,12 +205,7 @@ pub async fn setup_wireless(
             }
         };
 
-        // Step 2: Verify PICO 4 Ultra
-        emit_progress(&app, SetupStep::Pico, StepState::Running, None);
-        if !connection::verify_pico(&app, &usb_serial).await? {
-            emit_progress(&app, SetupStep::Pico, StepState::Failed, None);
-            return Err(AppError::new(ErrorCode::NotPico));
-        }
+        // Step 2: PICO 4 Ultra already verified by target_device above
         emit_progress(&app, SetupStep::Pico, StepState::Ok, None);
 
         // Step 3: Wi-Fi state & IP
@@ -269,6 +275,30 @@ pub async fn setup_wireless(
     .map_err(|_| AppError::new(ErrorCode::Timeout))?
 }
 
+/// Switch the headset's adbd back to USB-only, closing the port 5555 that setup_wireless opened.
+#[tauri::command]
+pub async fn disable_wireless_adb(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    let _guard = state.operation.lock().await;
+    if state.is_running.load(Ordering::SeqCst) {
+        return Err(AppError::new(ErrorCode::AlreadyRunning));
+    }
+    // Config is not changed here: the frontend's configWriter owns it and resets the mode.
+    let config = load_config(&app);
+    timeout(OPERATION_TIMEOUT, async {
+        let serial =
+            connection::require_target(&app, ConnectionMode::Wireless, &config.ip_address).await?;
+        run_adb_device_command(Some(&app), Some(&serial), "usb:").await?;
+        // adbd restarts, so the TCP transport is already dead; drop it from the host list.
+        let _ = run_adb_host_command(Some(&app), &format!("host:disconnect:{serial}")).await;
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|_| AppError::new(ErrorCode::Timeout))?
+}
+
 #[tauri::command]
 pub async fn set_debug_mode(state: State<'_, AppState>, enabled: bool) -> Result<(), AppError> {
     state.debug_mode.store(enabled, Ordering::SeqCst);
@@ -292,8 +322,11 @@ pub async fn save_config_cmd(
         .map_err(|e| AppError::with(ErrorCode::Unknown, e))?;
     if state.is_running.load(Ordering::SeqCst) {
         let current = load_config(&app);
+        // The running loop captured these at start; changing them now would desync the UI.
         if config.last_connection_mode != current.last_connection_mode
             || config.ip_address != current.ip_address
+            || config.keep_awake_interval_secs != current.keep_awake_interval_secs
+            || config.dim_delay_hours != current.dim_delay_hours
         {
             return Err(AppError::new(ErrorCode::AlreadyRunning));
         }

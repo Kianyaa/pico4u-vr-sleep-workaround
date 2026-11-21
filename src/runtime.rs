@@ -73,11 +73,23 @@ pub async fn start_keep_awake(
     });
     *state.keep_awake_task.lock().unwrap() = Some(task);
     if config.dim_delay_hours > 0.0 {
+        let saved_brightness = state.saved_brightness.clone();
         let dim_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(config.dim_delay_hours * 3600.0)).await;
             let result = async {
                 if !connection::verify_pico(&app, &serial).await? {
                     return Err(AppError::new(ErrorCode::DeviceLost));
+                }
+                // Remember the user's brightness so stop_keep_awake can put it back.
+                if let Ok(value) = run_adb_device_command(
+                    Some(&app),
+                    Some(&serial),
+                    "shell:settings get system screen_brightness",
+                )
+                .await
+                    && let Ok(level) = value.trim().parse::<u32>()
+                {
+                    *saved_brightness.lock().unwrap() = Some((serial.clone(), level));
                 }
                 run_adb_device_command(
                     Some(&app),
@@ -102,7 +114,7 @@ pub async fn start_keep_awake(
 }
 
 #[tauri::command]
-pub async fn stop_keep_awake(state: State<'_, AppState>) -> Result<(), AppError> {
+pub async fn stop_keep_awake(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
     let _guard = state.operation.lock().await;
     state.is_running.store(false, Ordering::SeqCst);
     let wake = state.keep_awake_task.lock().unwrap().take();
@@ -111,6 +123,16 @@ pub async fn stop_keep_awake(state: State<'_, AppState>) -> Result<(), AppError>
     for task in [wake, dim].into_iter().flatten() {
         task.abort();
         let _ = task.await;
+    }
+    // shortcut: brightness is restored on Stop only, not when the app is closed while dimmed
+    // (the exit handler is sync); add it there if users hit that.
+    let saved = state.saved_brightness.lock().unwrap().take();
+    if let Some((serial, level)) = saved {
+        let command = format!("shell:settings put system screen_brightness {level}");
+        // Best effort: a failed restore must not make Stop fail.
+        if let Err(e) = run_adb_device_command(Some(&app), Some(&serial), &command).await {
+            let _ = app.emit("debug-log", format!("Brightness restore: {e}"));
+        }
     }
     Ok(())
 }

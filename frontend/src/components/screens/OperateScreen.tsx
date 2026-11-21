@@ -4,6 +4,8 @@ import { ConnectionChip } from '../ui/ConnectionChip'
 import { PowerButton } from '../ui/PowerButton'
 import { ErrorCard } from '../ErrorCard'
 
+const STARTED_AT_KEY = 'keepAwakeStartedAt'
+
 interface OperateScreenProps {
   onChangeConnection: () => void
   onOpenLogs: () => void
@@ -16,31 +18,37 @@ export function OperateScreen({ onChangeConnection, onOpenLogs }: OperateScreenP
     deviceIp,
     isConnected,
     isRunning,
-    isDebug,
     toggleKeepAwake,
     keepAwakeInterval,
     dimAfterHours,
     wirelessSetupStatus,
     setupSteps,
     runtimeError,
+    runtime,
   } = useAppContext()
 
   // Elapsed time tracker while running
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   useEffect(() => {
+    if (!runtime.ready) return
     if (!isRunning) {
+      sessionStorage.removeItem(STARTED_AT_KEY)
       setElapsedSeconds(0)
       return
     }
 
-    const start = Date.now()
+    // Survives a webview reload, which keeps the backend loop (and its dim timer) running.
+    const stored = Number(sessionStorage.getItem(STARTED_AT_KEY))
+    const start = stored > 0 ? stored : Date.now()
+    sessionStorage.setItem(STARTED_AT_KEY, String(start))
+    setElapsedSeconds(Math.floor((Date.now() - start) / 1000))
     const interval = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - start) / 1000))
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [isRunning])
+  }, [isRunning, runtime.ready])
 
   const formatElapsed = (sec: number) => {
     const h = Math.floor(sec / 3600)
@@ -96,6 +104,16 @@ export function OperateScreen({ onChangeConnection, onOpenLogs }: OperateScreenP
           </p>
         </div>
 
+        {/* The loop keeps retrying on its own; tell the user the headset may sleep meanwhile. */}
+        {isRunning && !isConnected && (
+          <p
+            role='alert'
+            className='mt-3 text-xs font-semibold text-amber-600 dark:text-amber-400 text-center'
+          >
+            {t('operate_device_lost')}
+          </p>
+        )}
+
         {runtimeError && !isRunning && (
           <div className='mt-3 w-full'>
             <ErrorCard error={runtimeError} />
@@ -114,15 +132,14 @@ export function OperateScreen({ onChangeConnection, onOpenLogs }: OperateScreenP
           {t('btn_change_connection')}
         </button>
 
-        {isDebug && (
-          <button
-            type='button'
-            onClick={onOpenLogs}
-            className='hover:text-[var(--app-text)] transition-colors cursor-pointer py-1'
-          >
-            {t('tab_logs')}
-          </button>
-        )}
+        {/* Always available: errors are logged even without debug mode. */}
+        <button
+          type='button'
+          onClick={onOpenLogs}
+          className='hover:text-[var(--app-text)] transition-colors cursor-pointer py-1'
+        >
+          {t('tab_logs')}
+        </button>
       </div>
     </div>
   )

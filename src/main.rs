@@ -32,6 +32,7 @@ fn main() {
             check_connection_status,
             try_auto_connect,
             setup_wireless,
+            disable_wireless_adb,
             start_keep_awake,
             stop_keep_awake,
             get_running,

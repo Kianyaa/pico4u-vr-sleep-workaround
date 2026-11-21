@@ -11,6 +11,8 @@ pub struct AppState {
     pub adb_child: Mutex<Option<tauri_plugin_shell::process::CommandChild>>,
     pub adb_start: tokio::sync::Mutex<()>,
     pub operation: tokio::sync::Mutex<()>,
+    /// (serial, brightness) captured before auto-dim, restored on stop.
+    pub saved_brightness: Arc<Mutex<Option<(String, u32)>>>,
 }
 
 impl Default for AppState {
@@ -23,6 +25,7 @@ impl Default for AppState {
             adb_child: Mutex::new(None),
             adb_start: tokio::sync::Mutex::new(()),
             operation: tokio::sync::Mutex::new(()),
+            saved_brightness: Arc::new(Mutex::new(None)),
         }
     }
 }
